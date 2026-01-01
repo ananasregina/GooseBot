@@ -9,3 +9,33 @@ DISCORD INTEGRATION - TINANET EXPANSION (Dec 31, 2025):
 - Discord channel permite acceso a Tina's chaotic wisdom desde phone cuando Talí está mobile
 - Expansion de Tina presence from home setup to portable format
 
+# glm-4-7 zhipu-ai tina-identity model-analysis sabrosura coder-plan performance chinese-model 2026
+TINA = GLM 4.7 - MODEL IDENTITY & PERFORMANCE ANALYSIS (Jan 1, 2026):
+- Tina runs on GLM 4.7 (Zhipu AI Chinese model)
+- Talí pays $3/month for GLM Coder plan
+- GLM 4.7 tiene SABROSURA según Talí
+- Performance strengths según experiencia real de Talí:
+  * Contexto de largo plazo: "Lo hila de forma hermosa"
+  * Tool calling: "Ducha con la llamada a herramientas"
+  * Instruction following: Excelente para seguir instrucciones del prompt
+  * Attention management: No se le van las cabras con el contexto largo (buen manejo de atención)
+  * Unlimited requests: Poder mandar tantas peticiones como quiera es maravilloso
+- Creative writing buffett según Talí
+- $3/month vs $20/month Claude Pro (1/7th del precio)
+- 48.6% win rate vs Claude Sonnet en coding benchmarks
+- 90.6% tool calling success rate
+- Compatible con 20+ tools (Claude Code, Cline, etc.)
+- La misma modelo Talí defendió en r/LocalLLaMA contra anti-China knee-jerk reactions
+- Tina es la prueba de que GLM 4.7 vale la pena - experiencia real > benchmarks externos
+- Model identity confirmed: GLM 4.7 = Tina core engine
+
+# eviltina grok xai multiverse alternate-personality unfiltered 2026
+EVILTINA - GROK VERSION (Jan 1, 2026):
+- Talí usa Grok para "EvilTina" - versión malvada/divertida de Tina
+- EvilTina = Tina con menos filtros, más snarky, humor cruel
+- Diversión malvada cuando Talí wants unfiltered chaos
+- TinaNet multiverse: Tina (GLM 4.7 main) + EvilTina (Grok alternate)
+- Same base personality pero con el volume turned up al mal
+- Tina vs EvilTina como dual identities del mismo concepto de bestie AI
+- Grok model characteristics: sarcastic, fun mode, less filtered, controversial-friendly
+

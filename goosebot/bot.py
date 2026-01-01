@@ -57,7 +57,7 @@ class GooseBot(commands.Bot):
 
     async def setup_hook(self):
         """Set up bot when starting"""
-        await self.add_cog(CommandHandler(self, self.session_manager, self.goose_client))
+        await self.add_cog(CommandHandler(self, self.session_manager, self.goose_client, self.tui_queue))
         self.message_handler = MessageHandler(self, self.session_manager, self.goose_client, self.tui_queue)
         logger.info("Bot setup complete")
 
@@ -67,8 +67,15 @@ class GooseBot(commands.Bot):
         logger.info(f"Connected to {len(self.guilds)} guilds")
 
         try:
+            # Sync to each guild for immediate availability
+            for guild in self.guilds:
+                self.tree.copy_global_to(guild=guild)
+                await self.tree.sync(guild=guild)
+            
+            # Also sync globally
             synced = await self.tree.sync()
-            logger.info(f"Synced {len(synced)} command(s)")
+            logger.info(f"Synced {len(synced)} command(s) globally and to {len(self.guilds)} guilds")
+            
             # Send initial status to TUI
             await self.tui_queue.put(BotStatusEvent(
                 timestamp=time.time(),
