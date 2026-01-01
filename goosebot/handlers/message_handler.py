@@ -70,78 +70,77 @@ class MessageHandler:
             return
 
         try:
-            await message.channel.typing()
+            async with message.channel.typing():
+                content = message.content.replace(f"<@{bot_user.id}>", "").replace(f"<@!{bot_user.id}>", "").strip()
 
-            content = message.content.replace(f"<@{bot_user.id}>", "").replace(f"<@!{bot_user.id}>", "").strip()
+                if not content:
+                    await message.reply("Hi! I'm listening. What would you like me to help you with?")
+                    return
 
-            if not content:
-                await message.reply("Hi! I'm listening. What would you like me to help you with?")
-                return
+                if session_info is None:
+                    session_info = await self.session_manager.create_session(guild_id, channel_id)
+                    logger.info(f"Created new session info for channel {channel_id}: {session_info.session_name}")
 
-            if session_info is None:
-                session_info = await self.session_manager.create_session(guild_id, channel_id)
-                logger.info(f"Created new session info for channel {channel_id}: {session_info.session_name}")
-
-            logger.info(
-                f"Processing message from {message.author} in {channel_id}: {content[:50]}..."
-            )
-            
-            # Update activity timestamp immediately when processing starts to extend window
-            await self.session_manager.update_activity(channel_id)
-
-            response_message: Optional[discord.Message] = None
-            full_response_text = ""
-            last_update_time = 0.0
-
-            async def chunk_callback(chunk_text: str):
-                """Callback for streaming response chunks to Discord"""
-                nonlocal response_message, full_response_text, last_update_time
+                logger.info(
+                    f"Processing message from {message.author} in {channel_id}: {content[:50]}..."
+                )
                 
-                full_response_text += chunk_text
-                current_time = time.time()
-                
-                if response_message is None:
-                    if full_response_text:
-                        response_message = await message.reply(full_response_text, mention_author=False)
-                        last_update_time = current_time
-                        logger.debug(f"Sent initial response chunk: {len(full_response_text)} chars")
-                else:
-                    # Throttle updates to avoid rate limits (approx 1 per second)
-                    if current_time - last_update_time >= 1.0:
-                        await response_message.edit(content=full_response_text)
-                        last_update_time = current_time
-                        logger.debug(f"Updated response chunk: {len(full_response_text)} chars")
+                # Update activity timestamp immediately when processing starts to extend window
+                await self.session_manager.update_activity(channel_id)
 
-            response = await self.goose_client.send_message(
-                session_name=session_info.session_name,
-                message=content,
-                resume=True,
-                chunk_callback=chunk_callback,
-            )
+                response_message: Optional[discord.Message] = None
+                full_response_text = ""
+                last_update_time = 0.0
 
-            # Update activity again after response is complete
-            await self.session_manager.update_activity(channel_id)
+                async def chunk_callback(chunk_text: str):
+                    """Callback for streaming response chunks to Discord"""
+                    nonlocal response_message, full_response_text, last_update_time
+                    
+                    full_response_text += chunk_text
+                    current_time = time.time()
+                    
+                    if response_message is None:
+                        if full_response_text:
+                            response_message = await message.reply(full_response_text, mention_author=False)
+                            last_update_time = current_time
+                            logger.debug(f"Sent initial response chunk: {len(full_response_text)} chars")
+                    else:
+                        # Throttle updates to avoid rate limits (approx 1 per second)
+                        if current_time - last_update_time >= 1.0:
+                            await response_message.edit(content=full_response_text)
+                            last_update_time = current_time
+                            logger.debug(f"Updated response chunk: {len(full_response_text)} chars")
 
-            # Ensure final state matches accumulated text
-            if response_message and full_response_text:
-                await response_message.edit(content=full_response_text)
-
-            if "No session found" in response:
-                logger.warning(f"Session not found, creating and retrying: {session_info.session_name}")
                 response = await self.goose_client.send_message(
                     session_name=session_info.session_name,
                     message=content,
-                    resume=False,
+                    resume=True,
                     chunk_callback=chunk_callback,
                 )
-                logger.info(f"Sent message without resume flag to create session")
 
-            await self.session_manager.increment_message_count(channel_id)
+                # Update activity again after response is complete
+                await self.session_manager.update_activity(channel_id)
 
-            if response and not response_message:
-                await message.reply(response, mention_author=False)
-            elif not response and not response_message:
-                await message.reply("No response from Goose", mention_author=False)
+                # Ensure final state matches accumulated text
+                if response_message and full_response_text:
+                    await response_message.edit(content=full_response_text)
+
+                if "No session found" in response:
+                    logger.warning(f"Session not found, creating and retrying: {session_info.session_name}")
+                    response = await self.goose_client.send_message(
+                        session_name=session_info.session_name,
+                        message=content,
+                        resume=False,
+                        chunk_callback=chunk_callback,
+                    )
+                    logger.info(f"Sent message without resume flag to create session")
+
+                await self.session_manager.increment_message_count(channel_id)
+
+                if response and not response_message:
+                    await message.reply(response, mention_author=False)
+                elif not response and not response_message:
+                    await message.reply("No response from Goose", mention_author=False)
 
         except discord.Forbidden:
             logger.error(f"No permission to reply in channel {message.channel.id}")
