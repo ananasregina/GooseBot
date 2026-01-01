@@ -4,7 +4,7 @@ Communicates with goose acp subprocess via stdio (JSON-RPC 2.0)
 """
 import asyncio
 import json
-from typing import Optional, Tuple, List, Callable
+from typing import Optional, Tuple, List, Callable, Any, Awaitable
 import subprocess
 import os
 
@@ -78,13 +78,15 @@ class ACPClient:
         return line.decode().strip()
 
     async def send_request(self, method: str, params: Optional[dict] = None, 
-                     collect_notifications: bool = False) -> Tuple[Optional[dict], List[dict]]:
+                     collect_notifications: bool = False,
+                     on_notification: Optional[Callable[[dict], Awaitable[None]]] = None) -> Tuple[Optional[dict], List[dict]]:
         """Send a JSON-RPC 2.0 request and wait for response
         
         Args:
             method: The RPC method name
             params: Optional parameters for the request
             collect_notifications: If True, collect notifications until response arrives
+            on_notification: Optional async callback(notification_dict) for real-time processing
             
         Returns:
             Tuple of (response, notifications) if collect_notifications is True,
@@ -133,7 +135,14 @@ class ACPClient:
 
                 # Check if this is a notification (has 'method' but no 'id')
                 if 'method' in response and 'id' not in response:
-                    logger.debug(f"<<< Notification: {response.get('method')}")
+                    # Log less aggressively for chunks
+                    is_chunk = response.get('method') == 'session/update' and 'agentMessageChunk' in str(response)
+                    if not is_chunk:
+                         logger.debug(f"<<< Notification: {response.get('method')}")
+                    
+                    if on_notification:
+                        await on_notification(response)
+                        
                     if collect_notifications:
                         notifications.append(response)
                     continue
@@ -223,6 +232,50 @@ class ACPClient:
         Returns:
             The final response result, or None if error
         """
+        async def handle_notification(notification: dict):
+            """Handle streaming notifications in real-time"""
+            method = notification.get('method')
+            
+            if method in ["session/notification", "session/update"]:
+                params = notification.get('params', {})
+                
+                # Try to extract the update object
+                if 'update' in params:
+                    update = params['update']
+                elif 'sessionUpdate' in params:
+                    # Sometimes params itself might be the update object
+                    update = params
+                else:
+                    update = {}
+                
+                if not isinstance(update, dict):
+                    return
+                
+                update_type = update.get('sessionUpdate', 'unknown')
+                content = update.get('content')
+                
+                if update_type in ["agentMessageChunk", "agent_message_chunk"]:
+                    # Stream text content to callback
+                    if isinstance(content, dict):
+                        text = content.get('text', '')
+                        if text and chunk_callback:
+                            await chunk_callback(text)
+                
+                elif update_type in ["toolCall", "tool_call"]:
+                    logger.debug(f"Tool call: {update}")
+                elif update_type in ["toolCallUpdate", "tool_call_update"]:
+                    logger.debug(f"Tool call update: {update}")
+                elif update_type == "error":
+                    logger.error(f"Session error: {update}")
+                elif update_type == "complete":
+                    logger.debug("Prompt complete")
+                elif update_type != "unknown":
+                    logger.debug(f"Unknown update type: {update_type}")
+
+        # Send request with real-time notification handler
+        # We don't need to collect notifications if we have a callback, limiting memory usage
+        collect = chunk_callback is None
+        
         response, notifications = await self.send_request("session/prompt", {
             "sessionId": session_id,
             "prompt": [
@@ -231,52 +284,7 @@ class ACPClient:
                     "text": text
                 }
             ]
-        }, collect_notifications=True)
-
-        if not chunk_callback:
-            return response
-
-        if notifications:
-            logger.info(f"Processing {len(notifications)} streaming notifications")
-            
-            for notification in notifications:
-                method = notification.get('method')
-                
-                if method in ["session/notification", "session/update"]:
-                    params = notification.get('params', {})
-                    
-                    # Try to extract the update object
-                    if 'update' in params:
-                        update = params['update']
-                    elif 'sessionUpdate' in params:
-                        # Sometimes params itself might be the update object
-                        update = params
-                    else:
-                        update = {}
-                    
-                    if not isinstance(update, dict):
-                        continue
-                    
-                    update_type = update.get('sessionUpdate', 'unknown')
-                    content = update.get('content')
-                    
-                    if update_type in ["agentMessageChunk", "agent_message_chunk"]:
-                        # Stream text content to callback
-                        if isinstance(content, dict):
-                            text = content.get('text', '')
-                            if text:
-                                await chunk_callback(text)
-                    
-                    elif update_type in ["toolCall", "tool_call"]:
-                        logger.debug(f"Tool call: {update}")
-                    elif update_type in ["toolCallUpdate", "tool_call_update"]:
-                        logger.debug(f"Tool call update: {update}")
-                    elif update_type == "error":
-                        logger.error(f"Session error: {update}")
-                    elif update_type == "complete":
-                        logger.debug("Prompt complete")
-                    elif update_type != "unknown":
-                        logger.debug(f"Unknown update type: {update_type}")
+        }, collect_notifications=collect, on_notification=handle_notification)
 
         if response and 'error' in response:
             logger.error(f"Prompt error: {response['error']}")

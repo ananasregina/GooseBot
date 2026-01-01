@@ -10,7 +10,6 @@ A Discord bot that bridges Discord and the Goose.ai CLI, allowing users to inter
 - **Session Persistence**: Remembers conversation context across bot restarts by saving state to `~/.config/goosebot/`.
 - **Slash Commands**: Control sessions with `/clear_session`, `/restart_session`, `/set_name`, `/status`, and `/help`.
 - **Agent Naming**: Customize the agent name per server.
-- **Goose ACP Integration**: Uses the Agent Client Protocol (ACP) for high-performance communication.
 
 ## Prerequisites
 

@@ -107,9 +107,12 @@ class MessageHandler:
                     else:
                         # Throttle updates to avoid rate limits (approx 1 per second)
                         if current_time - last_update_time >= 1.0:
-                            await response_message.edit(content=full_response_text)
-                            last_update_time = current_time
-                            logger.debug(f"Updated response chunk: {len(full_response_text)} chars")
+                            try:
+                                await response_message.edit(content=full_response_text)
+                                last_update_time = current_time
+                                logger.debug(f"Updated response chunk: {len(full_response_text)} chars")
+                            except discord.HTTPException as e:
+                                logger.warning(f"Failed to update chunk: {e}")
 
                 response = await self.goose_client.send_message(
                     session_name=session_info.session_name,
@@ -117,15 +120,18 @@ class MessageHandler:
                     resume=True,
                     chunk_callback=chunk_callback,
                 )
-
+                
                 # Update activity again after response is complete
                 await self.session_manager.update_activity(channel_id)
 
                 # Ensure final state matches accumulated text
                 if response_message and full_response_text:
-                    await response_message.edit(content=full_response_text)
+                    try:
+                        await response_message.edit(content=full_response_text)
+                    except discord.HTTPException as e:
+                        logger.warning(f"Failed to final update message: {e}")
 
-                if "No session found" in response:
+                if "No session found" in str(response):
                     logger.warning(f"Session not found, creating and retrying: {session_info.session_name}")
                     response = await self.goose_client.send_message(
                         session_name=session_info.session_name,
@@ -137,9 +143,13 @@ class MessageHandler:
 
                 await self.session_manager.increment_message_count(channel_id)
 
+                if not response and not response_message and full_response_text:
+                     # This might happen if we had chunks but the final return was suppressed (e.g. tool output)
+                     response_message = await message.reply(full_response_text, mention_author=False)
+
                 if response and not response_message:
                     await message.reply(response, mention_author=False)
-                elif not response and not response_message:
+                elif not response and not response_message and not full_response_text:
                     await message.reply("No response from Goose", mention_author=False)
 
         except discord.Forbidden:

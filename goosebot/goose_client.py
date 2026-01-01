@@ -158,12 +158,14 @@ class GooseClient:
                         error_msg = result['error']
                         logger.error(f"Goose ACP error: {error_msg}")
                         return f"❌ Goose error: {error_msg}"
-                    # May have other fields we want to show raw
-                    logger.debug(f"Goose response: {result}")
-                    return str(result)
+                    
+                    # For non-error dicts (like tool calls or empty stops), return empty string
+                    # The content should have been streamed via chunks
+                    logger.debug(f"Goose response (dict): {result}")
+                    return ""
                 else:
                     logger.debug(f"Goose response type: {type(result)}")
-                    return str(result)
+                    return ""
             elif response and 'error' in response:
                 error = response['error']
                 logger.error(f"Goose ACP error: {error}")

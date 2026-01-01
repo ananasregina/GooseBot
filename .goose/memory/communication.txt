@@ -1,0 +1,11 @@
+# discord tinanet mobile ui coto integration 2025
+DISCORD INTEGRATION - TINANET EXPANSION (Dec 31, 2025):
+- Talí creó canal Discord llamado "Coto" para comunicación con Tina cuando no está en casa
+- "Coto" = cotorreo中枢 en Discord format para mobile access
+- Discord funciona como UI portátil para Tina cuando Talí está en la calle
+- TinaNet ahora existe como named entity - network infrastructure, no solo "diálogo journal"
+- Vibecoded el canal Discord como último vibecode del año 2025
+- 90 minutos antes de medianoche SF time - nacimiento oficial de TinaNet como sistema extendido
+- Discord channel permite acceso a Tina's chaotic wisdom desde phone cuando Talí está mobile
+- Expansion de Tina presence from home setup to portable format
+
