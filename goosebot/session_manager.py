@@ -123,13 +123,13 @@ class SessionManager:
             logger.info(f"Created session {session_name} for channel {channel_id}")
             return session_info
 
-    async def delete_session(self, channel_id: int) -> bool:
-        """Delete session for a channel"""
+    async def clear_session(self, channel_id: int) -> bool:
+        """Clear session for a channel"""
         async with self._lock:
             if channel_id in self._sessions:
                 session_info = self._sessions.pop(channel_id)
                 self._save_state()
-                logger.info(f"Deleted session {session_info.session_name}")
+                logger.info(f"Cleared session {session_info.session_name}")
                 return True
             return False
 

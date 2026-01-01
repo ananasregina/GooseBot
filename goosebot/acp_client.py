@@ -29,6 +29,7 @@ class ACPClient:
         self._write_lock = asyncio.Lock()
         self._initialized = False
         self._shutdown = False
+        self.capabilities: dict = {}
 
     async def start(self):
         """Start goose acp subprocess"""
@@ -179,6 +180,7 @@ class ACPClient:
             prompt_caps = capabilities.get('promptCapabilities', {})
 
             logger.info(f"Initialized ACP: loadSession={load_session}, promptCapabilities={prompt_caps}")
+            self.capabilities = capabilities
             self._initialized = True
             return True
         else:
@@ -284,14 +286,18 @@ class ACPClient:
         # We don't need to collect notifications if we have a callback, limiting memory usage
         collect = chunk_callback is None
         
+        # Prepare prompt payload
+        if isinstance(text, str):
+            prompt_payload = [{"type": "text", "text": text}]
+        elif isinstance(text, list):
+            prompt_payload = text
+        else:
+            logger.error(f"Invalid prompt type: {type(text)}")
+            return None
+
         response, notifications = await self.send_request("session/prompt", {
             "sessionId": session_id,
-            "prompt": [
-                {
-                    "type": "text",
-                    "text": text
-                }
-            ]
+            "prompt": prompt_payload
         }, collect_notifications=collect, on_notification=handle_notification)
 
         if response and 'error' in response:

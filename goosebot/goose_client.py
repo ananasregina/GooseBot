@@ -36,6 +36,11 @@ class GooseClient:
 
         Config.ensure_data_dir()
         self._load_sessions()
+        
+    @property
+    def capabilities(self) -> dict:
+        """Get capabilities of the underlying agent"""
+        return self._acp_client.capabilities
 
     async def start(self):
         """Start of goose acp subprocess"""
@@ -105,6 +110,7 @@ class GooseClient:
         resume: bool = True,
         chunk_callback=None,
         instructions: Optional[str] = None,
+        attachments: Optional[list] = None,
     ) -> str:
         """Send a message to Goose and get response via ACP protocol
         
@@ -143,8 +149,20 @@ class GooseClient:
                         if not session_id:
                             return "❌ Failed to create replacement session"
             
+            
+            # Prepare prompt
+            prompt: any = message
+            if attachments:
+                prompt = [{"type": "text", "text": message}] if message else []
+                for attachment in attachments:
+                    prompt.append({
+                        "type": "image",
+                        "data": attachment["data"],
+                        "mediaType": attachment["media_type"]
+                    })
+
             # Send prompt with streaming using the goose-generated session ID
-            response = await self._acp_client.prompt(session_id, message, chunk_callback)
+            response = await self._acp_client.prompt(session_id, prompt, chunk_callback)
             
             if response and 'result' in response:
                 result = response['result']
@@ -210,15 +228,24 @@ class GooseClient:
             else:
                 return "❌ Unexpected response from compaction request"
 
-    async def delete_session(self, session_name: str) -> bool:
-        """Delete a Goose session - NOT SUPPORTED IN ACP MODE
+    async def clear_session(self, session_name: str) -> bool:
+        """Clear a Goose session mapping
         
-        ACP doesn't provide session deletion - sessions persist until user
-        manually cleans them up via 'goose session remove'
+        Note: ACP doesn't provide remote session deletion, so we just
+        remove our local mapping.
         """
-        logger.warning(f"Session deletion not supported in ACP mode. Session '{session_name}' will persist.")
-        logger.info("Use 'goose session list' and 'goose session remove' to manage sessions manually.")
-        return False
+        async with self._lock:
+            if session_name in self._session_mapping:
+                session_id = self._session_mapping.pop(session_name)
+                if session_id in self._loaded_sessions:
+                    self._loaded_sessions.remove(session_id)
+                self._save_sessions()
+                logger.info(f"Cleared local mapping for session: {session_name}")
+                return True
+            
+            # Also check if it's a discord-style name and we need to find it
+            # (Though usually the caller passes the correct session_name)
+            return False
 
     async def create_session(self, session_name: str, agent_name: Optional[str] = None) -> bool:
         """Create a new Goose session"""

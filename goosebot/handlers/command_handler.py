@@ -110,7 +110,7 @@ class CommandHandler(commands.Cog):
             return
 
         try:
-            await self.goose_client.delete_session(session_info.session_name)
+            await self.goose_client.clear_session(session_info.session_name)
             await self.session_manager.clear_session(channel_id)
             await interaction.followup.send("🧹 Session cleared for this channel")
             logger.info(f"Cleared session for channel {channel_id}")
@@ -140,6 +140,15 @@ class CommandHandler(commands.Cog):
     @app_commands.command(name="restart_session", description="Restart the Goose session (clear and create new)")
     async def restart_session(self, interaction: discord.Interaction):
         """Restart the session"""
+        await self._perform_restart(interaction, "/restart_session")
+
+    @app_commands.command(name="reset_session", description="Reset the Goose session (clear and create new)")
+    async def reset_session(self, interaction: discord.Interaction):
+        """Reset the session"""
+        await self._perform_restart(interaction, "/reset_session")
+
+    async def _perform_restart(self, interaction: discord.Interaction, command_name: str):
+        """Common logic for restarting/resetting a session"""
         request_id = f"cmd_{interaction.id}"
         await self._emit_event(RequestUpdateEvent(
             timestamp=time.time(),
@@ -147,7 +156,7 @@ class CommandHandler(commands.Cog):
             status=RequestStatus.PROCESSING,
             user=str(interaction.user),
             channel=str(interaction.channel),
-            message_content="/restart_session",
+            message_content=command_name,
             progress=0.1
         ))
 
@@ -165,11 +174,13 @@ class CommandHandler(commands.Cog):
             return
 
         try:
-            # Delete and then it will be re-created on next message
-            await self.goose_client.delete_session(session_info.session_name)
+            # Clear local mappings and session info
+            await self.goose_client.clear_session(session_info.session_name)
             await self.session_manager.clear_session(channel_id)
-            await interaction.followup.send("🔄 Session restarted! A new session will be created on your next message.")
-            logger.info(f"Restarted session for channel {channel_id}")
+            
+            msg = "🔄 Session restarted!" if "restart" in command_name else "🔄 Session reset!"
+            await interaction.followup.send(f"{msg} A new session will be created on your next message.")
+            logger.info(f"{command_name} for channel {channel_id}")
             
             await self._emit_event(RequestUpdateEvent(
                 timestamp=time.time(),
@@ -177,11 +188,11 @@ class CommandHandler(commands.Cog):
                 status=RequestStatus.COMPLETED,
                 user=str(interaction.user),
                 channel=str(interaction.channel),
-                message_content="/restart_session",
+                message_content=command_name,
                 progress=1.0
             ))
         except Exception as e:
-            logger.error(f"Error restarting session: {e}", exc_info=True)
+            logger.error(f"Error in {command_name}: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)}")
             await self._emit_event(RequestUpdateEvent(
                 timestamp=time.time(),
@@ -189,7 +200,7 @@ class CommandHandler(commands.Cog):
                 status=RequestStatus.ERROR,
                 user=str(interaction.user),
                 channel=str(interaction.channel),
-                message_content="/restart_session",
+                message_content=command_name,
                 error=str(e)
             ))
 
@@ -535,7 +546,7 @@ class CommandHandler(commands.Cog):
             color=discord.Color.green(),
         )
         embed.add_field(name="How to use", value="Just mention me in any message!\nExample: `@GooseBot help me write a Python function`", inline=False)
-        embed.add_field(name="Slash Commands", value="`/set_name <name>` - Set agent name\n`/clear_session` - Clear current session\n`/restart_session` - Restart session\n`/compact` - Compact session context\n`/capy` - Get capybara facts & news\n`/noticias <tema>` - Get news about a topic\n`/status` - Show session info\n`/help` - Show this help", inline=False)
+        embed.add_field(name="Slash Commands", value="`/set_name <name>` - Set agent name\n`/clear_session` - Clear current session\n`/restart_session` - Restart session\n`/reset_session` - Reset session\n`/compact` - Compact session context\n`/capy` - Get capybara facts & news\n`/noticias <tema>` - Get news about a topic\n`/status` - Show session info\n`/help` - Show this help", inline=False)
 
         await interaction.followup.send(embed=embed)
         

@@ -6,6 +6,7 @@ from discord.ext import commands
 from typing import Optional
 import time
 import asyncio
+import base64
 
 try:
     from ..session_manager import SessionManager
@@ -41,7 +42,11 @@ class MessageHandler:
         # Debug log to verify we are receiving events
         logger.debug(f"Handling message {message.id} from {message.author}: content='{message.content}' (empty={not message.content}), bot={message.author.bot}")
 
-        if message.author.bot or not message.content:
+        if message.author.bot:
+            return
+        
+        # Allow empty content if there are attachments
+        if not message.content and not message.attachments:
             return
 
         bot_user = self.bot.user
@@ -177,12 +182,42 @@ class MessageHandler:
                     "Keep your responses reasonably short and avoid excessive markdown formatting unless requested."
                 )
 
+                # Process attachments
+                processed_attachments = []
+                if message.attachments:
+                    # Check if model supports images
+                    capabilities = self.goose_client.capabilities
+                    supports_images = capabilities.get("promptCapabilities", {}).get("image", False)
+                    
+                    for attachment in message.attachments:
+                        if attachment.content_type and attachment.content_type.startswith("image/"):
+                            if not supports_images:
+                                await message.reply(f"⚠️ The current model does not support images. Ignoring attachment: {attachment.filename}")
+                                continue
+                                
+                            try:
+                                logger.info(f"Processing image attachment: {attachment.filename} ({attachment.content_type})")
+                                image_data = await attachment.read()
+                                base64_data = base64.b64encode(image_data).decode('utf-8')
+                                processed_attachments.append({
+                                    "data": base64_data,
+                                    "media_type": attachment.content_type
+                                })
+                            except Exception as e:
+                                logger.error(f"Failed to process attachment {attachment.filename}: {e}")
+                                await message.reply(f"❌ Failed to process attachment: {attachment.filename}")
+                        else:
+                            # Non-image attachments - for now we just warn
+                            logger.warning(f"Unsupported attachment type: {attachment.content_type}")
+                            await message.reply(f"⚠️ Unsupported attachment type: {attachment.filename}. Currently only images are supported.")
+
                 response = await self.goose_client.send_message(
                     session_name=session_info.session_name,
                     message=content,
                     resume=True,
                     chunk_callback=chunk_callback,
                     instructions=instructions,
+                    attachments=processed_attachments if processed_attachments else None,
                 )
                 
                 # Update activity again after response is complete

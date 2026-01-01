@@ -2,11 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.2.0] - 2026-01-01
+## [1.3.0] - 2026-01-01
 
 ### Added
-- **Command: `/noticias`**: New slash command to search for news on a specific topic with a personalized analysis.
-- **Typing Indicators**: Added Discord "typing" indicators for slash commands (`/capy` and `/noticias`) to provide better visual feedback during long-running tasks.
+- **Attachment Support**: Support for image attachments in Discord. The bot now detects multimodal capabilities via ACP and processes images (Base64 encoding) to send to Goose.
+- **Command: `/reset_session`**: New slash command as an alias for `/restart_session` to reset the current Goose session.
+
+### Fixed
+- **Session Management**: Resolved attribute errors in `clear_session` and `restart_session` by ensuring consistent method naming across `SessionManager`, `GooseClient`, and `CommandHandler`.
+- **Session Clearing**: Fixed an issue where local session mappings were not actually being removed when clearing a session.
+
+## [1.2.0] - 2026-01-01
 
 ## [1.1.0] - 2026-01-01
 
