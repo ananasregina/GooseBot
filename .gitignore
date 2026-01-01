@@ -1,0 +1,11 @@
+# Add gitignore entries
+.env
+config.env
+*.pyc
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.log
+.DS_Store
