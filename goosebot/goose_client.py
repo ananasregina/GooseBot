@@ -21,10 +21,15 @@ logger = setup_logger(__name__)
 class GooseClient:
     """Wrapper for interacting with Goose CLI via ACP protocol"""
 
-    def __init__(self, goose_path: Optional[str] = None):
+    def __init__(self, goose_path: Optional[str] = None, model: Optional[str] = None):
         self.goose_path = goose_path or Config.GOOSE_CLI_PATH
         self._lock = asyncio.Lock()
-        self._acp_client = ACPClient(goose_path=self.goose_path)
+        
+        env_vars = {}
+        if model:
+            env_vars["GOOSE_MODEL"] = model
+            
+        self._acp_client = ACPClient(goose_path=self.goose_path, env_vars=env_vars)
         self._started = False
         self._session_mapping = {}
         self._loaded_sessions = set()  # Track sessions loaded in current process
@@ -52,25 +57,18 @@ class GooseClient:
         if not self._started:
             await self.start()
 
-    async def _new_session_and_map(self, session_name: str) -> Optional[str]:
+    async def _new_session_and_map(self, session_name: str, instructions: Optional[str] = None) -> Optional[str]:
         """Create a new session and map Discord channel name to goose session ID"""
-        params = {
-            "mcpServers": [],
-            "cwd": os.getcwd()
-        }
+        session_id = await self._acp_client.new_session(cwd=os.getcwd(), instructions=instructions)
         
-        response, _ = await self._acp_client.send_request("session/new", params)
-        
-        if response and 'result' in response:
-            session_id = response['result'].get('sessionId')
+        if session_id:
             logger.info(f"Created new session: {session_id}")
             self._session_mapping[session_name] = session_id
             self._loaded_sessions.add(session_id)
             self._save_sessions()
             return session_id
         else:
-            error = response.get('error', {}) if response else {}
-            logger.error(f"Failed to create session: {error}")
+            logger.error(f"Failed to create session")
             return None
 
     def _get_session_file(self):
@@ -106,6 +104,7 @@ class GooseClient:
         message: str,
         resume: bool = True,
         chunk_callback=None,
+        instructions: Optional[str] = None,
     ) -> str:
         """Send a message to Goose and get response via ACP protocol
         
@@ -114,6 +113,7 @@ class GooseClient:
             message: The user message to send
             resume: Whether to resume existing session
             chunk_callback: Optional async callback(text) called for each response chunk
+            instructions: Optional system instructions for new sessions
             
         Returns:
             The final response text, or error message
@@ -125,7 +125,7 @@ class GooseClient:
             
             if not actual_session_id:
                 # Create new session and map it
-                session_id = await self._new_session_and_map(session_name)
+                session_id = await self._new_session_and_map(session_name, instructions=instructions)
                 if not session_id:
                     return "❌ Failed to create session"
             else:
@@ -173,6 +173,42 @@ class GooseClient:
             else:
                 logger.error(f"Unexpected ACP response: {response}")
                 return "❌ Unexpected response from Goose"
+
+    async def compact_session(self, session_name: str) -> str:
+        """Manually trigger session compaction in Goose
+        
+        Args:
+            session_name: The Discord session name
+            
+        Returns:
+            Success or error message
+        """
+        async with self._lock:
+            await self._ensure_started()
+
+            actual_session_id = self._session_mapping.get(session_name)
+            if not actual_session_id:
+                return "❌ No active session to compact"
+
+            # Check if we need to load this session into active memory
+            if actual_session_id not in self._loaded_sessions:
+                success, _ = await self._acp_client.load_session(actual_session_id)
+                if success:
+                    self._loaded_sessions.add(actual_session_id)
+                else:
+                    return "❌ Failed to load session for compaction"
+
+            # Send /compact command as a prompt
+            # We don't use the chunk callback here as we expect a system response
+            response = await self._acp_client.prompt(actual_session_id, "/compact")
+            
+            if response and 'result' in response:
+                return "✅ Session compacted successfully"
+            elif response and 'error' in response:
+                error = response['error']
+                return f"❌ Compaction error: {error}"
+            else:
+                return "❌ Unexpected response from compaction request"
 
     async def delete_session(self, session_name: str) -> bool:
         """Delete a Goose session - NOT SUPPORTED IN ACP MODE

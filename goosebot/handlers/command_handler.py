@@ -96,6 +96,30 @@ class CommandHandler(commands.Cog):
             logger.error(f"Error restarting session: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Error: {str(e)}")
 
+    @app_commands.command(name="compact", description="Manually trigger session compaction to save context tokens")
+    async def compact(self, interaction: discord.Interaction):
+        """Compact the session"""
+        await interaction.response.defer()
+
+        if interaction.channel_id is None:
+            await interaction.followup.send("⚠️ This command cannot be used in DMs")
+            return
+
+        channel_id = interaction.channel_id
+        session_info = await self.session_manager.get_session(channel_id)
+
+        if session_info is None:
+            await interaction.followup.send("⚠️ No active session in this channel")
+            return
+
+        try:
+            result = await self.goose_client.compact_session(session_info.session_name)
+            await interaction.followup.send(result)
+            logger.info(f"Compact session result for {session_info.session_name}: {result}")
+        except Exception as e:
+            logger.error(f"Error compacting session: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Error: {str(e)}")
+
     @app_commands.command(name="status", description="Show the current session status")
     async def status(self, interaction: discord.Interaction):
         """Show session status"""
@@ -138,6 +162,6 @@ class CommandHandler(commands.Cog):
             color=discord.Color.green(),
         )
         embed.add_field(name="How to use", value="Just mention me in any message!\nExample: `@GooseBot help me write a Python function`", inline=False)
-        embed.add_field(name="Slash Commands", value="`/set_name <name>` - Set agent name\n`/clear_session` - Clear current session\n`/restart_session` - Restart session\n`/status` - Show session info\n`/help` - Show this help", inline=False)
+        embed.add_field(name="Slash Commands", value="`/set_name <name>` - Set agent name\n`/clear_session` - Clear current session\n`/restart_session` - Restart session\n`/compact` - Compact session context\n`/status` - Show session info\n`/help` - Show this help", inline=False)
 
         await interaction.followup.send(embed=embed)

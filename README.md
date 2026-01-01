@@ -8,8 +8,10 @@ A Discord bot that bridges Discord and the Goose.ai CLI, allowing users to inter
 - **Listening Window**: Stays attentive for 5 minutes (configurable) after its last response, allowing natural conversation without constant pinging.
 - **Real-time Streaming**: Response chunks are streamed to Discord as they arrive, providing a smooth experience.
 - **Session Persistence**: Remembers conversation context across bot restarts by saving state to `~/.config/goosebot/`.
-- **Slash Commands**: Control sessions with `/clear_session`, `/restart_session`, `/set_name`, `/status`, and `/help`.
+- **Slash Commands**: Control sessions with `/clear_session`, `/restart_session`, `/compact`, `/set_name`, `/status`, and `/help`.
 - **Agent Naming**: Customize the agent name per server.
+- **Model Selection**: Choose your preferred model via environment variables.
+- **Discord Context Awareness**: The agent is automatically briefed on the server, channel, and user it is interacting with.
 
 ## Prerequisites
 
@@ -48,6 +50,7 @@ uv pip install -r requirements.txt
     ```env
     DISCORD_BOT_TOKEN=your_actual_bot_token_here
     LISTEN_WINDOW_SECONDS=300
+    GOOSE_MODEL=openai:gpt-4o  # Optional: set your preferred model
     ```
 
 ### 4. Invite Bot to Server
@@ -81,6 +84,7 @@ python run.py
 - `/set_name <name>` - Set the agent name for new sessions in this server
 - `/clear_session` - Clear the current Goose session for this channel
 - `/restart_session` - Restart (delete and recreate) the session
+- `/compact` - Manually trigger session context compaction (summarization) to save tokens
 - `/status` - Show the current session status and information
 - `/help` - Display help information and available commands
 

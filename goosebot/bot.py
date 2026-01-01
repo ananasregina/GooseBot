@@ -4,6 +4,9 @@ Main Discord bot for GooseBot
 import discord
 from discord.ext import commands
 import asyncio
+import time
+import logging
+from pathlib import Path
 
 try:
     from .config import Config
@@ -11,14 +14,25 @@ try:
     from .goose_client import GooseClient
     from .handlers import MessageHandler, CommandHandler
     from .utils.logger import setup_logger
+    from .tui import GooseTUI, RequestUpdateEvent, LogEvent, BotStatusEvent, RequestStatus
+    from .tui.logger_handler import TUILogHandler
 except ImportError:
     from config import Config
     from session_manager import SessionManager
     from goose_client import GooseClient
     from handlers import MessageHandler, CommandHandler
     from utils.logger import setup_logger
+    from tui import GooseTUI, RequestUpdateEvent, LogEvent, BotStatusEvent, RequestStatus
+    from tui.logger_handler import TUILogHandler
 
-logger = setup_logger(__name__)
+tui_event_queue = asyncio.Queue()
+log_path = Path("goosebot.log")
+logger = setup_logger(
+    __name__, 
+    log_file=log_path,
+    disable_console=True, 
+    extra_handlers=[TUILogHandler(tui_event_queue)]
+)
 
 
 class GooseBot(commands.Bot):
@@ -38,12 +52,13 @@ class GooseBot(commands.Bot):
         )
 
         self.session_manager = SessionManager()
-        self.goose_client = GooseClient()
+        self.goose_client = GooseClient(model=Config.GOOSE_MODEL)
+        self.tui_queue = tui_event_queue
 
     async def setup_hook(self):
         """Set up bot when starting"""
         await self.add_cog(CommandHandler(self, self.session_manager, self.goose_client))
-        self.message_handler = MessageHandler(self, self.session_manager, self.goose_client)
+        self.message_handler = MessageHandler(self, self.session_manager, self.goose_client, self.tui_queue)
         logger.info("Bot setup complete")
 
     async def on_ready(self):
@@ -54,6 +69,13 @@ class GooseBot(commands.Bot):
         try:
             synced = await self.tree.sync()
             logger.info(f"Synced {len(synced)} command(s)")
+            # Send initial status to TUI
+            await self.tui_queue.put(BotStatusEvent(
+                timestamp=time.time(),
+                is_connected=True,
+                guild_count=len(self.guilds),
+                user_name=str(self.user)
+            ))
         except Exception as e:
             logger.error(f"Error syncing commands: {e}", exc_info=True)
 
@@ -81,17 +103,49 @@ async def main():
         print(f"❌ {msg}")
         return
 
+    # Silence external loggers that might output to console
+    logging.getLogger("discord").propagate = False
+    logging.getLogger("textual").propagate = False
+    setup_logger("discord", log_file=log_path, level=logging.INFO)
+    setup_logger("textual", log_file=log_path, level=logging.INFO)
+
     bot = GooseBot()
+    tui = GooseTUI(tui_event_queue)
 
     try:
         logger.info("Starting GooseBot...")
-        await bot.start(Config.DISCORD_BOT_TOKEN)
+        # Start bot as a background task
+        bot_task = asyncio.create_task(bot.start(Config.DISCORD_BOT_TOKEN))
+        
+        # Give TUI a moment to start before sending first status if already connected
+        async def delayed_status():
+            await asyncio.sleep(2)
+            if bot.is_ready():
+                 await tui_event_queue.put(BotStatusEvent(
+                    timestamp=time.time(),
+                    is_connected=True,
+                    guild_count=len(bot.guilds),
+                    user_name=str(bot.user)
+                ))
+        
+        asyncio.create_task(delayed_status())
+
+        # Run TUI in the main task
+        await tui.run_async()
+        
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt")
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
     finally:
         await bot.close()
+        # Ensure bot task is cleaned up
+        if 'bot_task' in locals():
+            bot_task.cancel()
+            try:
+                await bot_task
+            except asyncio.CancelledError:
+                pass
 
 
 def run():

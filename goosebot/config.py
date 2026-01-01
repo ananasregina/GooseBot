@@ -19,6 +19,7 @@ class Config:
     DISCORD_BOT_TOKEN: str = os.getenv("DISCORD_BOT_TOKEN", "")
     GOOSE_CLI_PATH: str = os.getenv("GOOSE_CLI_PATH", "goose")
     DEFAULT_AGENT_NAME: str = os.getenv("DEFAULT_AGENT_NAME", "Goose")
+    GOOSE_MODEL: Optional[str] = os.getenv("GOOSE_MODEL")
 
     # Goose CLI settings
     MAX_TURNS: int = int(os.getenv("GOOSE_MAX_TURNS", "1000"))

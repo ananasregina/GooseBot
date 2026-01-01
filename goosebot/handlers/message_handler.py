@@ -5,17 +5,20 @@ import discord
 from discord.ext import commands
 from typing import Optional
 import time
+import asyncio
 
 try:
     from ..session_manager import SessionManager
     from ..goose_client import GooseClient
     from ..config import Config
     from ..utils.logger import setup_logger
+    from ..tui import RequestUpdateEvent, RequestStatus
 except ImportError:
     from session_manager import SessionManager
     from goose_client import GooseClient
     from config import Config
     from utils.logger import setup_logger
+    from tui import RequestUpdateEvent, RequestStatus
 
 logger = setup_logger(__name__)
 
@@ -23,10 +26,15 @@ logger = setup_logger(__name__)
 class MessageHandler:
     """Handles Discord message events"""
 
-    def __init__(self, bot: commands.Bot, session_manager: SessionManager, goose_client: GooseClient):
+    def __init__(self, bot: commands.Bot, session_manager: SessionManager, goose_client: GooseClient, tui_queue: Optional[asyncio.Queue] = None):
         self.bot = bot
         self.session_manager = session_manager
         self.goose_client = goose_client
+        self.tui_queue = tui_queue
+
+    async def _emit_event(self, event: RequestUpdateEvent):
+        if self.tui_queue:
+            await self.tui_queue.put(event)
 
     async def handle_message(self, message: discord.Message):
         """Process incoming Discord message"""
@@ -69,6 +77,17 @@ class MessageHandler:
             logger.debug("Ignoring message: not mentioned, not DM, not reply, and listening window expired or no session")
             return
 
+        # Emit initial event
+        request_id = str(message.id)
+        await self._emit_event(RequestUpdateEvent(
+            timestamp=time.time(),
+            request_id=request_id,
+            status=RequestStatus.RECEIVED,
+            user=str(message.author),
+            channel=str(message.channel),
+            message_content=message.content
+        ))
+
         try:
             async with message.channel.typing():
                 content = message.content.replace(f"<@{bot_user.id}>", "").replace(f"<@!{bot_user.id}>", "").strip()
@@ -85,6 +104,17 @@ class MessageHandler:
                     f"Processing message from {message.author} in {channel_id}: {content[:50]}..."
                 )
                 
+                # Update status to QUEUING/PROCESSING
+                await self._emit_event(RequestUpdateEvent(
+                    timestamp=time.time(),
+                    request_id=request_id,
+                    status=RequestStatus.PROCESSING,
+                    user=str(message.author),
+                    channel=str(message.channel),
+                    message_content=message.content,
+                    progress=0.1
+                ))
+
                 # Update activity timestamp immediately when processing starts to extend window
                 await self.session_manager.update_activity(channel_id)
 
@@ -104,6 +134,17 @@ class MessageHandler:
                             response_message = await message.reply(full_response_text, mention_author=False)
                             last_update_time = current_time
                             logger.debug(f"Sent initial response chunk: {len(full_response_text)} chars")
+                            
+                            # Update status to RESPONDING
+                            await self._emit_event(RequestUpdateEvent(
+                                timestamp=current_time,
+                                request_id=request_id,
+                                status=RequestStatus.RESPONDING,
+                                user=str(message.author),
+                                channel=str(message.channel),
+                                message_content=message.content,
+                                progress=0.5
+                            ))
                     else:
                         # Throttle updates to avoid rate limits (approx 1 per second)
                         if current_time - last_update_time >= 1.0:
@@ -111,14 +152,37 @@ class MessageHandler:
                                 await response_message.edit(content=full_response_text)
                                 last_update_time = current_time
                                 logger.debug(f"Updated response chunk: {len(full_response_text)} chars")
+                                
+                                # Update progress slightly
+                                await self._emit_event(RequestUpdateEvent(
+                                    timestamp=current_time,
+                                    request_id=request_id,
+                                    status=RequestStatus.RESPONDING,
+                                    user=str(message.author),
+                                    channel=str(message.channel),
+                                    message_content=message.content,
+                                    progress=min(0.9, 0.5 + (len(full_response_text) / 2000)) # Fake progress
+                                ))
                             except discord.HTTPException as e:
                                 logger.warning(f"Failed to update chunk: {e}")
+
+                # Construct instructions for new sessions
+                guild_name = message.guild.name if message.guild else "Direct Message"
+                channel_name = message.channel.name if not is_dm else f"DM with {message.author}"
+                
+                instructions = (
+                    f"You are interacting as a Discord bot. "
+                    f"Server: {guild_name}, Channel: {channel_name}. "
+                    f"User: {message.author.display_name}. "
+                    "Keep your responses reasonably short and avoid excessive markdown formatting unless requested."
+                )
 
                 response = await self.goose_client.send_message(
                     session_name=session_info.session_name,
                     message=content,
                     resume=True,
                     chunk_callback=chunk_callback,
+                    instructions=instructions,
                 )
                 
                 # Update activity again after response is complete
@@ -152,12 +216,50 @@ class MessageHandler:
                 elif not response and not response_message and not full_response_text:
                     await message.reply("No response from Goose", mention_author=False)
 
+                # Mark as COMPLETED
+                await self._emit_event(RequestUpdateEvent(
+                    timestamp=time.time(),
+                    request_id=request_id,
+                    status=RequestStatus.COMPLETED,
+                    user=str(message.author),
+                    channel=str(message.channel),
+                    message_content=message.content,
+                    progress=1.0
+                ))
+
         except discord.Forbidden:
             logger.error(f"No permission to reply in channel {message.channel.id}")
+            await self._emit_event(RequestUpdateEvent(
+                timestamp=time.time(),
+                request_id=request_id,
+                status=RequestStatus.ERROR,
+                user=str(message.author),
+                channel=str(message.channel),
+                message_content=message.content,
+                error="Forbidden"
+            ))
         except discord.HTTPException as e:
             logger.error(f"Discord API error: {e}")
+            await self._emit_event(RequestUpdateEvent(
+                timestamp=time.time(),
+                request_id=request_id,
+                status=RequestStatus.ERROR,
+                user=str(message.author),
+                channel=str(message.channel),
+                message_content=message.content,
+                error=str(e)
+            ))
         except Exception as e:
             logger.error(f"Error handling message: {e}", exc_info=True)
+            await self._emit_event(RequestUpdateEvent(
+                timestamp=time.time(),
+                request_id=request_id,
+                status=RequestStatus.ERROR,
+                user=str(message.author),
+                channel=str(message.channel),
+                message_content=message.content,
+                error=str(e)
+            ))
             try:
                 await message.reply(f"❌ Error processing message: {str(e)}", mention_author=False)
             except:

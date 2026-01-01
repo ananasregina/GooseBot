@@ -21,8 +21,9 @@ logger = setup_logger(__name__)
 class ACPClient:
     """Client for communicating with goose acp subprocess"""
 
-    def __init__(self, goose_path: Optional[str] = None):
+    def __init__(self, goose_path: Optional[str] = None, env_vars: Optional[dict] = None):
         self.goose_path = goose_path or Config.GOOSE_CLI_PATH
+        self.env_vars = env_vars or {}
         self._process: Optional[asyncio.subprocess.Process] = None
         self._request_id = 0
         self._write_lock = asyncio.Lock()
@@ -39,12 +40,17 @@ class ACPClient:
 
         logger.info(f"Starting goose acp: {' '.join(cmd)}")
 
+        # Prepare environment
+        env = os.environ.copy()
+        if self.env_vars:
+            env.update(self.env_vars)
+
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            bufsize=0,
+            env=env,
         )
 
         if self._process:
@@ -180,12 +186,14 @@ class ACPClient:
             logger.error(f"Failed to initialize ACP: {error}")
             return False
 
-    async def new_session(self, cwd: Optional[str] = None) -> Optional[str]:
+    async def new_session(self, cwd: Optional[str] = None, instructions: Optional[str] = None) -> Optional[str]:
         """Create a new session (session/new)"""
         params = {
             "mcpServers": [],
             "cwd": cwd or os.getcwd()
         }
+        if instructions:
+            params["instructions"] = instructions
         
         response, _ = await self.send_request("session/new", params)
         
