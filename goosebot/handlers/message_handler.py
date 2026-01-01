@@ -14,12 +14,14 @@ try:
     from ..config import Config
     from ..utils.logger import setup_logger
     from ..tui import RequestUpdateEvent, RequestStatus
+    from ..utils.context import get_context_instructions
 except ImportError:
     from session_manager import SessionManager
     from goose_client import GooseClient
     from config import Config
     from utils.logger import setup_logger
     from tui import RequestUpdateEvent, RequestStatus
+    from utils.context import get_context_instructions
 
 logger = setup_logger(__name__)
 
@@ -90,12 +92,17 @@ class MessageHandler:
             status=RequestStatus.RECEIVED,
             user=str(message.author),
             channel=str(message.channel),
-            message_content=message.content
+            message_content=message.clean_content
         ))
 
         try:
             async with message.channel.typing():
-                content = message.content.replace(f"<@{bot_user.id}>", "").replace(f"<@!{bot_user.id}>", "").strip()
+                # Use clean_content to resolve mentions to names, then strip bot name if still present
+                content = message.clean_content.replace(f"@{bot_user.display_name}", "").replace(f"@{bot_user.name}", "").strip()
+                
+                # If bot_user is in simple @Bot format in clean_content
+                if content.startswith(bot_user.display_name):
+                    content = content[len(bot_user.display_name):].strip()
 
                 if not content:
                     await message.reply("Hi! I'm listening. What would you like me to help you with?")
@@ -116,7 +123,7 @@ class MessageHandler:
                     status=RequestStatus.PROCESSING,
                     user=str(message.author),
                     channel=str(message.channel),
-                    message_content=message.content,
+                    message_content=message.clean_content,
                     progress=0.1
                 ))
 
@@ -152,6 +159,8 @@ class MessageHandler:
                             ))
                     else:
                         # Throttle updates to avoid rate limits (approx 1 per second)
+                        # CRITICAL: We only throttle if there's enough time left. 
+                        # The final update is handled after send_message returns.
                         if current_time - last_update_time >= 1.0:
                             try:
                                 await response_message.edit(content=full_response_text)
@@ -172,14 +181,8 @@ class MessageHandler:
                                 logger.warning(f"Failed to update chunk: {e}")
 
                 # Construct instructions for new sessions
-                guild_name = message.guild.name if message.guild else "Direct Message"
-                channel_name = message.channel.name if not is_dm else f"DM with {message.author}"
-                
-                instructions = (
-                    f"You are interacting as a Discord bot. "
-                    f"Server: {guild_name}, Channel: {channel_name}. "
-                    f"User: {message.author.display_name}. "
-                    "Keep your responses reasonably short and avoid excessive markdown formatting unless requested."
+                instructions = get_context_instructions(
+                    message.author, message.channel, message.guild, bot_user
                 )
 
                 # Process attachments
@@ -223,9 +226,16 @@ class MessageHandler:
                 # Update activity again after response is complete
                 await self.session_manager.update_activity(channel_id)
 
-                # Ensure final state matches accumulated text
+                # If the final response from goose_client contains more content than we captured in chunks,
+                # or if we didn't get any chunks at all, update our full_response_text.
+                if response and isinstance(response, str) and len(response) > len(full_response_text):
+                    logger.debug(f"Final response longer than streamed chunks ({len(response)} vs {len(full_response_text)}). Using final response.")
+                    full_response_text = response
+
+                # Ensure final state matches accumulated text - ALWAYS update one last time
                 if response_message and full_response_text:
                     try:
+                        logger.debug(f"Finalizing message update: {len(full_response_text)} chars")
                         await response_message.edit(content=full_response_text)
                     except discord.HTTPException as e:
                         logger.warning(f"Failed to final update message: {e}")
@@ -237,6 +247,7 @@ class MessageHandler:
                         message=content,
                         resume=False,
                         chunk_callback=chunk_callback,
+                        instructions=instructions,
                     )
                     logger.info(f"Sent message without resume flag to create session")
 

@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - **Session Management**: Resolved attribute errors in `clear_session` and `restart_session` by ensuring consistent method naming across `SessionManager`, `GooseClient`, and `CommandHandler`.
 - **Session Clearing**: Fixed an issue where local session mappings were not actually being removed when clearing a session.
+- **Message Finalization**: Resolved lag and truncation issues in Discord responses by ensuring strict synchronization between streamed chunks and final RPC results.
 
 ## [1.2.0] - 2026-01-01
 

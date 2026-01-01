@@ -1,5 +1,5 @@
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.widgets import Header, Footer, Static, RichLog, DataTable, ProgressBar, TabbedContent, TabPane
 from textual.binding import Binding
 from textual.reactive import reactive
@@ -64,6 +64,11 @@ class GooseTUI(App):
     #log-view {
         border: solid blue;
     }
+    #requests-container {
+        height: 1fr;
+        overflow-y: scroll;
+        scrollbar-gutter: stable;
+    }
     """
     
     BINDINGS = [
@@ -87,7 +92,7 @@ class GooseTUI(App):
         with TabbedContent(initial="dashboard"):
             with TabPane("Dashboard", id="dashboard"):
                 yield Static(id="bot-status-bar", content="Bot status: Disconnected")
-                yield Vertical(id="requests-container")
+                yield VerticalScroll(id="requests-container")
             with TabPane("Logs", id="logs"):
                 yield RichLog(id="log-view", highlight=True, markup=True)
             with TabPane("Settings", id="settings"):

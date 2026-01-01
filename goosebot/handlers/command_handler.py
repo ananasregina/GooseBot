@@ -13,11 +13,13 @@ try:
     from ..goose_client import GooseClient
     from ..utils.logger import setup_logger
     from ..tui import RequestUpdateEvent, RequestStatus
+    from ..utils.context import get_context_instructions
 except ImportError:
     from session_manager import SessionManager
     from goose_client import GooseClient
     from utils.logger import setup_logger
     from tui import RequestUpdateEvent, RequestStatus
+    from utils.context import get_context_instructions
 
 logger = setup_logger(__name__)
 
@@ -324,11 +326,16 @@ class CommandHandler(commands.Cog):
                     progress=0.3
                 ))
 
+                instructions = get_context_instructions(
+                    interaction.user, interaction.channel, interaction.guild, self.bot.user
+                )
+
                 response = await self.goose_client.send_message(
                     session_name=temp_session,
                     message=prompt,
                     resume=False,  # Start a fresh session for news
-                    chunk_callback=chunk_callback
+                    chunk_callback=chunk_callback,
+                    instructions=instructions
                 )
             
             # Ensure final response is sent if not already fully Sent via chunks
@@ -430,11 +437,16 @@ class CommandHandler(commands.Cog):
                     progress=0.3
                 ))
 
+                instructions = get_context_instructions(
+                    interaction.user, interaction.channel, interaction.guild, self.bot.user
+                )
+
                 response = await self.goose_client.send_message(
                     session_name=temp_session,
                     message=prompt,
                     resume=False,  # Start a fresh session for news
-                    chunk_callback=chunk_callback
+                    chunk_callback=chunk_callback,
+                    instructions=instructions
                 )
             
             # Ensure final response is sent if not already fully sent via chunks
